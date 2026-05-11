@@ -1,14 +1,38 @@
 <script setup>
 import { ref } from 'vue'
 import { updateColumn, moveColumn, deleteColumn } from '../api/columns.js'
+import { createCard } from '../api/cards.js'
+import CardItem from './CardItem.vue'
 
 const props = defineProps({
   column: { type: Object, required: true },
   canMoveUp: { type: Boolean, default: false },
-  canMoveDown: { type: Boolean, default: false }
+  canMoveDown: { type: Boolean, default: false },
+  cards: { type: Array, default: () => [] }
 })
 
-const emit = defineEmits(['update', 'reorder', 'delete'])
+const emit = defineEmits(['update', 'reorder', 'delete', 'add-card', 'card-edit'])
+
+// Add-card form state
+const newCardTitle = ref('')
+const addingCard = ref(false)
+const addCardError = ref('')
+
+async function addCard() {
+  const title = newCardTitle.value.trim()
+  if (!title || addingCard.value) return
+  addCardError.value = ''
+  addingCard.value = true
+  try {
+    const card = await createCard(props.column.id, { title })
+    emit('add-card', card)
+    newCardTitle.value = ''
+  } catch (e) {
+    addCardError.value = e.message
+  } finally {
+    addingCard.value = false
+  }
+}
 
 // Editable title
 const editingTitle = ref(false)
@@ -114,7 +138,27 @@ async function remove() {
 
     <p v-if="colError" class="col-error">{{ colError }}</p>
 
-    <div class="cards-placeholder">No cards yet</div>
+    <div class="cards-list">
+      <CardItem
+        v-for="card in cards"
+        :key="card.id"
+        :card="card"
+        @edit="emit('card-edit', $event)"
+      />
+      <p v-if="cards.length === 0" class="no-cards">No cards yet</p>
+    </div>
+
+    <form class="add-card-form" @submit.prevent="addCard">
+      <input
+        v-model="newCardTitle"
+        type="text"
+        placeholder="Card title…"
+        maxlength="120"
+        :disabled="addingCard"
+      />
+      <button type="submit" :disabled="addingCard || !newCardTitle.trim()">Add</button>
+    </form>
+    <p v-if="addCardError" class="col-error">{{ addCardError }}</p>
   </div>
 </template>
 
@@ -201,12 +245,46 @@ async function remove() {
   margin: 0;
 }
 
-.cards-placeholder {
+.cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-height: 2rem;
+}
+
+.no-cards {
   color: #9ca3af;
   font-size: 0.82rem;
   text-align: center;
-  padding: 1.5rem 0;
+  padding: 1rem 0;
+  margin: 0;
   border: 1px dashed #e5e7eb;
   border-radius: 8px;
+}
+
+.add-card-form {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+.add-card-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.82rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+
+.add-card-form input:focus {
+  outline: 2px solid #6366f1;
+  outline-offset: 1px;
+}
+
+.add-card-form button {
+  font-size: 0.8rem;
+  padding: 0.4rem 0.6rem;
+  flex-shrink: 0;
 }
 </style>
