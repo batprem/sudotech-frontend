@@ -6,15 +6,17 @@ const emit = defineEmits(['open'])
 
 const boards = ref([])
 const newTitle = ref('')
-const error = ref('')
+const formError = ref('')
+const deleteError = ref('')
 const busy = ref(false)
 const loading = ref(true)
+const loadError = ref('')
 
 onMounted(async () => {
   try {
     boards.value = await listBoards()
   } catch (e) {
-    error.value = e.message
+    loadError.value = e.message
   } finally {
     loading.value = false
   }
@@ -28,45 +30,65 @@ function relativeTime(iso) {
   const hrs = Math.floor(mins / 60)
   if (hrs < 24) return `${hrs}h ago`
   const days = Math.floor(hrs / 24)
-  if (days < 30) return `${days}d ago`
-  return new Date(iso).toLocaleDateString()
+  return `${days}d ago`
 }
 
 async function addBoard() {
   const title = newTitle.value.trim()
-  if (!title || busy.value) return
-  error.value = ''
+  if (busy.value) return
+  if (!title) { formError.value = 'Title is required.'; return }
+  if (title.length > 80) { formError.value = 'Title must be 80 characters or fewer.'; return }
+  formError.value = ''
+  deleteError.value = ''
   busy.value = true
   try {
     const board = await createBoard(title)
-    boards.value.push(board)
+    boards.value.unshift(board)
     newTitle.value = ''
     emit('open', board.id)
   } catch (e) {
-    error.value = e.message
+    formError.value = e.message
   } finally {
     busy.value = false
   }
 }
 
 async function removeBoard(board) {
-  if (!confirm(`Delete board "${board.title}"? This cannot be undone.`)) return
+  if (!window.confirm(`Delete board "${board.title}"?`)) return
+  deleteError.value = ''
   try {
     await deleteBoard(board.id)
     boards.value.splice(boards.value.indexOf(board), 1)
   } catch (e) {
-    error.value = e.message
+    deleteError.value = e.message
+    try { boards.value = await listBoards() } catch (_) { /* keep existing list */ }
   }
 }
 </script>
 
 <template>
   <div class="boards-wrap">
+    <form class="new-board-form" @submit.prevent="addBoard">
+      <div class="new-board-row">
+        <input
+          v-model="newTitle"
+          type="text"
+          placeholder="New board title…"
+          :disabled="busy"
+          maxlength="80"
+        />
+        <button type="submit" :disabled="busy">Add board</button>
+      </div>
+      <p v-if="formError" class="form-error">{{ formError }}</p>
+    </form>
+
     <p v-if="loading" class="boards-loading">Loading…</p>
 
-    <p v-if="error" class="boards-error">{{ error }}</p>
+    <p v-if="loadError" class="boards-error">{{ loadError }}</p>
 
-    <div v-if="!loading" class="boards-grid">
+    <p v-if="deleteError" class="boards-error">{{ deleteError }}</p>
+
+    <div v-if="!loading && boards.length > 0" class="boards-grid">
       <div
         v-for="board in boards"
         :key="board.id"
@@ -74,7 +96,7 @@ async function removeBoard(board) {
         @click="$emit('open', board.id)"
       >
         <span class="board-card-title">{{ board.title }}</span>
-        <span class="board-card-time">{{ relativeTime(board.updated_at) }}</span>
+        <span class="board-card-time">edited {{ relativeTime(board.updated_at) }}</span>
         <button
           class="ghost board-card-delete"
           type="button"
@@ -84,20 +106,9 @@ async function removeBoard(board) {
       </div>
     </div>
 
-    <p v-if="!loading && boards.length === 0 && !error" class="boards-empty">
-      No boards yet. Create your first one below.
+    <p v-if="!loading && boards.length === 0 && !loadError" class="boards-empty">
+      No boards yet — create your first one above.
     </p>
-
-    <form class="new-board-form" @submit.prevent="addBoard">
-      <input
-        v-model="newTitle"
-        type="text"
-        placeholder="New board title…"
-        :disabled="busy"
-        maxlength="80"
-      />
-      <button type="submit" :disabled="busy || !newTitle.trim()">Add board</button>
-    </form>
   </div>
 </template>
 
@@ -172,6 +183,10 @@ async function removeBoard(board) {
 }
 
 .new-board-form {
+  margin-bottom: 1.5rem;
+}
+
+.new-board-row {
   display: flex;
   gap: 0.5rem;
 }
@@ -187,5 +202,11 @@ async function removeBoard(board) {
 .new-board-form input:focus {
   outline: 2px solid #6366f1;
   outline-offset: 1px;
+}
+
+.form-error {
+  color: #ef4444;
+  font-size: 0.85rem;
+  margin: 0.35rem 0 0;
 }
 </style>
