@@ -2,12 +2,13 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { getBoard, updateBoard } from '../api/boards.js'
 import { createColumn } from '../api/columns.js'
+import { updateCard, deleteCard } from '../api/cards.js'
 import BoardColumn from '../components/BoardColumn.vue'
 
 const props = defineProps({ boardId: Number })
 const emit = defineEmits(['back'])
 
-const state = reactive({ board: null, columns: [] })
+const state = reactive({ board: null, columns: [], cards: [] })
 const loading = ref(true)
 const error = ref('')
 
@@ -30,12 +31,47 @@ async function loadBoard() {
   try {
     const data = await getBoard(props.boardId)
     state.board = data.board
-    // Sort columns by position (server should already return sorted, but be safe)
     state.columns = [...data.columns].sort((a, b) => a.position - b.position)
+    state.cards = data.cards ?? []
   } catch (e) {
     error.value = e.message
   } finally {
     loading.value = false
+  }
+}
+
+function cardsFor(colId) {
+  return state.cards
+    .filter(c => c.column_id === colId)
+    .sort((a, b) => a.position - b.position)
+}
+
+function onCardAdded(card) {
+  state.cards.push(card)
+}
+
+async function onCardEdit(card) {
+  const newTitle = window.prompt('Rename card:', card.title)
+  if (newTitle === null) {
+    // User cancelled prompt — offer delete instead
+    if (window.confirm(`Delete card "${card.title}"?`)) {
+      try {
+        await deleteCard(card.id)
+        state.cards = state.cards.filter(c => c.id !== card.id)
+      } catch (e) {
+        error.value = e.message
+      }
+    }
+    return
+  }
+  const trimmed = newTitle.trim()
+  if (!trimmed || trimmed === card.title) return
+  try {
+    const updated = await updateCard(card.id, { title: trimmed, description: card.description || '', due_date: card.due_date ?? null, labels: card.labels ?? [] })
+    const idx = state.cards.findIndex(c => c.id === card.id)
+    if (idx !== -1) state.cards[idx] = updated
+  } catch (e) {
+    error.value = e.message
   }
 }
 
@@ -86,6 +122,7 @@ function onColumnUpdated(updatedCol) {
 
 function onColumnDeleted(colId) {
   state.columns = state.columns.filter(c => c.id !== colId)
+  state.cards = state.cards.filter(c => c.column_id !== colId)
 }
 </script>
 
@@ -123,9 +160,12 @@ function onColumnDeleted(colId) {
           :column="col"
           :can-move-up="idx > 0"
           :can-move-down="idx < state.columns.length - 1"
+          :cards="cardsFor(col.id)"
           @update="onColumnUpdated"
           @reorder="onColumnsReordered"
           @delete="onColumnDeleted"
+          @add-card="onCardAdded"
+          @card-edit="onCardEdit"
         />
 
         <div class="add-column-panel">
