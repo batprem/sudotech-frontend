@@ -22,6 +22,4 @@ yarn-error.log*
 # Docs / build noise
 README.md
 CLAUDE.md
-Dockerfile
 .dockerignore
-nginx.conf
